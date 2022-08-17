@@ -18,3 +18,4 @@ docker run -i \
     -e "SLSK_CONNECT_TIMEOUT=5000" \
     -e "SLSK_INACTIVITY_TIMEOUT=15000" \
     $1
+	

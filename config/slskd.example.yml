@@ -1,5 +1,5 @@
 # debug: false
-# remote_configuration: false
+remote_configuration: true
 # instance_name: default
 # flags:
 #   no_logo: false

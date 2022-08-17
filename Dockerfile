@@ -78,4 +78,8 @@ LABEL org.opencontainers.image.title=slskd \
 WORKDIR /slskd
 COPY --from=publish /slskd/dist/${TARGETPLATFORM} .
 
+EXPOSE 5000
+EXPOSE 5001
+EXPOSE 50000
+
 ENTRYPOINT ["./slskd"]

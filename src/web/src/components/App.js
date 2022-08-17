@@ -18,6 +18,7 @@ import Transfers from './Transfers/Transfers';
 import Chat from './Chat/Chat';
 import System from './System/System';
 import LoginForm from './LoginForm';
+import BulkDL from './BulkDL/BulkDL.tsx';
 
 import AppContext from './AppContext';
 
@@ -199,6 +200,11 @@ class App extends Component {
                 <Icon name='folder open'/>Browse
               </Menu.Item>
             </Link>
+            <Link to={`${urlBase}/bulk`}>
+              <Menu.Item>
+                <Icon name='industry'/>Bulk dl
+              </Menu.Item>
+            </Link>
             <Menu className='right' inverted>
               {server?.isConnected && <Menu.Item
                 onClick={() => disconnect()}
@@ -277,6 +283,13 @@ class App extends Component {
                       server={applicationState.server}
                       {...props}
                     />
+                  </div>)}
+                />
+                <Route path={`${urlBase}/bulk`} render={(props) => 
+                  this.withTokenCheck(<div className='view'>
+                    <BulkDL
+                      server={applicationState.server}
+                      {...props}/>
                   </div>)}
                 />
                 <Route path={`${urlBase}/browse`} render={(props) => this.withTokenCheck(<Browse {...props}/>)}/>
