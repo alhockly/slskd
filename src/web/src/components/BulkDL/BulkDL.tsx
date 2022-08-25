@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import * as searchlib from '../../lib/searches';
 import * as transfers from '../../lib/transfers';
 import {
-  Button,
+  Button, Dimmer, Dropdown, List, Loader, Segment,
 } from 'semantic-ui-react';
 import { createSearchHubConnection } from '../../lib/hubFactory';
 import Dropzone from './Dropzone';
@@ -101,7 +101,7 @@ const BulkDL = ({server}) => {
     const cleanTrackName = searchitem.title.toLowerCase().replace('-', '').replace('  ',' ').replace('/','').trim();
 
     const numMatches = 20;
-    var blacklist = ['bootleg', 'remix', 'rmx', 'edit', 'clean'];
+    var blacklist = ['bootleg', 'remix', 'rmx','mix', 'edit', 'clean'];
     blacklist = blacklist.filter(x => !searchitem.title.toLowerCase().includes(x));
     const responses = await searchlib.getResponses({ id: searchitem.id });  //responses is a list of UserShare
     let matches : FileResult[] = [];
@@ -116,7 +116,7 @@ const BulkDL = ({server}) => {
             !blacklist.some(element => lowercaseName.includes(element)) &&
             !file.isLocked
           ){
-
+        
             file.username = share.username;
             file.uploadSpeed = share.uploadSpeed;
             
@@ -133,9 +133,8 @@ const BulkDL = ({server}) => {
       }
     });
     console.log('results fetch complete');
-
     matches = matches?.sort((a, b) => b.bitRate - a.bitRate);
-    
+
     const item: SearchItem = {
       id: searchitem.id,
       title: searchitem.title,
@@ -149,15 +148,14 @@ const BulkDL = ({server}) => {
       allResults: allResults,
       queued: false,
     };
-    let tmp = itemMap;
-    tmp[searchitem.id] = item;
-    setItemMap(tmp);
-    setCompletedItems(numberOfItemsComplete());
-
-    // reRenderItemMap();
+    setItemMap(prevState => ({...prevState,  [item.id]: item}));
+    setCompletedItems(prevState => ({...prevState,  count: prevState.count + 1}) );
+    
+    setSearchComplete(true);
     
     if(allItemsCompleted()){
       //console.log('All items completed');
+      setSearchComplete(true);
       console.log(itemMap);
       reCheckItemsWithZeroMatches();
     }
@@ -182,7 +180,6 @@ const BulkDL = ({server}) => {
     if(!wasRechecks) {
       setSearchComplete(true);
       console.log('finished rechecks');
-      reRenderItemMap();
     }
   };
 
@@ -200,7 +197,6 @@ const BulkDL = ({server}) => {
   };
 
   const numberOfItemsComplete = () => {
-
     var num = 0;
     for (const key in itemMap) {
       if (Object.prototype.hasOwnProperty.call(itemMap, key)) {
@@ -214,7 +210,7 @@ const BulkDL = ({server}) => {
   };
 
   const onSearchUpdate = (search : SearchUpdate) => {
-    console.log(search);
+    //console.log(search);
 
     const item: SearchItem = {
       id: search.id,
@@ -229,27 +225,15 @@ const BulkDL = ({server}) => {
       allResults: itemMap[search.id]?.allResults,
       queued: false,
     };
-    
-    let tmp = itemMap;
-    tmp[search.id] = item;
-    setItemMap(tmp);
-    //console.log(itemMap);
-
-    reRenderItemMap();
-
+    setItemMap(prevState => ({...prevState,  [search.id]: item}));
+   
     if(search.isComplete){
       console.log('Search finished');
       getResults(item);
-      
     } 
   };
 
-  const reRenderItemMap = () => {
-    var tmp = itemMap;
-    tmp['changed'] = uuidv4();
-    setItemMap(tmp);
-    // forceUpdate();
-  };
+ 
 
   useEffect( () =>{
     setNumItems(0);
@@ -269,39 +253,29 @@ const BulkDL = ({server}) => {
       console.log('searchHub connected');
     };
 
-    connect();
-
-    const waiter = async () => {
-      console.log('waiter');
-      console.log(itemMap);
-      //reRenderItemMap();
-    };
-
-    setInterval(() => {setItemMap(itemMap); }, 5000);
-    setInterval(() => waiter(), 60000);
-    
+    connect(); 
   },[]);
 
 
 
-  const waitAndStart =async () => {
-    console.log('waiting 10 secs to start next batch');
+  const waitAndStart = async (index ) => {
+    console.log('waiting 10 secs to start batch ' + index);
     await new Promise(r => setTimeout(r, timeBetweenBatches));
-    startNextBatch(batchedItems[batchIndex]);
+    startNextBatch(batchedItems.batched[index]);
   };
 
   useEffect(() => {
-    if(batchedItems.length !== 0) {
-      console.log('completed ' + completedItems);
+    if(batchedItems.length !== 0 && batchedItems != null  && batchedItems.batched[batchIndex]!= null) {
+      console.log('completed ' + numberOfItemsComplete());
       
       var currentBatchsize = 1;
-      try{
-        currentBatchsize = (batchedItems[batchIndex] as SearchItem[]).length;
-      }catch(e) {
-        console.log('batchindex: ' +batchIndex + ' numBatches: '+ batchedItems.length);
-      }
 
-      if(numberOfItemsComplete() >= currentBatchsize ){
+      //The last batch may not be equal length to the batchSize
+      var currentBatch = (batchedItems.batched[batchIndex] as SearchItem[])
+      currentBatchsize = currentBatch.length;   
+      var completeThisBatch = Object.keys(currentBatch).map(x => itemMap[currentBatch[x].id]).filter(x => x.isCompleted).length
+
+      if(completeThisBatch >= currentBatchsize ){
         if(batchIndex > batchedItems.length - 1) {
           console.log('all batches finished');
           setSearchComplete(true);
@@ -309,16 +283,15 @@ const BulkDL = ({server}) => {
         }
 
         setBatchIndex(batchIndex +1);
-        waitAndStart();
+        waitAndStart(batchIndex +1);
       }
     }
-  }, [completedItems]);
 
+  },[completedItems])
 
   const downloadAll = () => {
     for (const key in itemMap) {
       if (Object.prototype.hasOwnProperty.call(itemMap, key)) { 
-        //TODO Might need to check the type of itemMap here for maps of 1 item
         const element : SearchItem = itemMap[key];
         if(element.bestMatch) {
           startDownload(element.bestMatch);
@@ -335,14 +308,12 @@ const BulkDL = ({server}) => {
 
   const itemMapToList = () => {
     var items : SearchItem[] = [];
-
     for (const key in itemMap) {
       if (Object.prototype.hasOwnProperty.call(itemMap, key)) {
         const element : SearchItem = itemMap[key];
         items.push(element);
       }
     }
-
     return items;
   };
 
@@ -351,13 +322,11 @@ const BulkDL = ({server}) => {
     var items : SearchItem[] = itemMapToList();
     setNumItems(items.length);
     const batched = arraySlice(items, batchSize);
-    setBatchedItems(batched);
+    setBatchedItems(prevState => ({...prevState,  batched}));
     startNextBatch(batched[0]);
   };
 
   const startNextBatch = (batch) => {
-    //reRenderItemMap();
-    console.log('starting search for batch '+ batchIndex + '.');
     if(batch as SearchItem[]){
       batch.forEach((item) => {
         startSearch(item);
@@ -383,7 +352,6 @@ const BulkDL = ({server}) => {
     setAllItemsInMap(true);
     console.log('All items in map');
     console.log(itemMap);
-    // reRenderItemMap();
 
     searchAllInMap();
   };
@@ -411,9 +379,116 @@ const BulkDL = ({server}) => {
   };
 
 
+
+  const RenderItemMapItem = (item : SearchItem) => {
+    if(item.title == null){return '';}
+
+    
+    const onClickConfirm = () =>{
+      if(selected == null){ selected = resultOptions[0].value; }
+      console.log(selected);
+
+      const newItem : SearchItem = {
+        id: item.id,
+        title: item.title,
+        artist: item.artist,
+        results: item.results,
+        // extension: extension,
+        isCompleted: item.isCompleted,
+        bestMatch: selected,
+        filesFound: item.filesFound,
+        recheckCount: item.recheckCount,
+        allResults: item.allResults,
+        queued: item.queued,
+      };
+
+      setItemMap(prevState => ({...prevState,  [item.id]: newItem}));
+
+    };
+
+    const onClickEdit = () => {
+      const newItem : SearchItem = {
+        id: item.id,
+        title: item.title,
+        artist: item.artist,
+        results: item.results,
+        // extension: extension,
+        isCompleted: item.isCompleted,
+        bestMatch: null,
+        filesFound: item.filesFound,
+        recheckCount: item.recheckCount,
+        allResults: item.allResults,
+        queued: item.queued,
+      };
+      setItemMap(prevState => ({...prevState,  [item.id]: newItem}));
+    };
+
+    const resultOptions = item.allResults.map((result : FileResult) => ({value: result, key: uuidv4(), text: result.filename}));
+    var selected = null;
+    
+    var textColour  = item?.filesFound >0 ? 'black' : 'rgba(0, 0, 0, 0.3)';
+    return (
+      <List.Item key={item?.id} style={{padding: '10px',
+        margin:'10px', backgroundColor: 'grey', borderRadius: '5px', color: textColour}}>
+        <div style={{ display: 'flex', direction: 'row' }}>
+
+          <div style={{ width: '70%' }}>
+            <p style={{fontSize: '20px'}}>{item?.artist} - {item?.title} </p>
+          </div>
+          <div style={{ display: 'flex', alignItems : 'center' }}>
+            <div style={{paddingTop:10}}> files: {item?.filesFound}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems : 'center', marginLeft:10 }}>
+            {!item?.isCompleted && !item.queued && (
+              <Segment style={{ backgroundColor:'rgba(255,255,255,0'}}>
+                <Dimmer active >
+                  <Loader active size='mini'/>
+                </Dimmer>
+              </Segment>
+            )}
+            {item.queued &&(<>queued</>)}
+          </div>
+        </div>
+        <div>
+                
+          <strong>best match: </strong> 
+          {item?.bestMatch && (
+            item?.bestMatch?.filename
+          )}
+
+          {item?.isCompleted && (
+            <>
+              {!item?.bestMatch && item?.allResults?.length >0 && item.filesFound > 0 ? (
+                <>
+                  <Dropdown
+                    fluid
+                    selection
+                    defaultValue={resultOptions[0].value}
+                    options={resultOptions}
+                    onChange={(e, data) => {selected = (data.value as FileResult);}} 
+                  />
+                  <Button onClick={ () => onClickConfirm()}>ok</Button>
+                </>
+              ) : (
+                <>
+                  {item?.isCompleted && item?.filesFound > 0 && (
+                    <Button onClick={ () => onClickEdit()}>Edit</Button>   
+                  )}
+                </>
+              ) }
+            </>   
+          )}
+          
+        </div>
+      </List.Item>
+    );
+  };
+
+
   return(
     <div>Bulk dl
-      {itemMap['changed'] = uuidv4()}
+     
       <p>Head to <Link to="https://exportify.net/">exportify.net/</Link> to export your playlist from Spotify</p>
       <br/>
       <br/>
@@ -425,12 +500,12 @@ const BulkDL = ({server}) => {
         <Button onClick={() => downloadAll()}>Download All</Button>
       )}
 
-      
-      <Dropzone onDrop={onDrop} accept={'text/csv'} />
+      {!searchComplete && numItems === 0 && (
+        <Dropzone onDrop={onDrop} accept={'text/csv'} />
+      )}
 
       <BulkSearchList
-        list={itemMapToList()}
-      />
+        list={itemMap} renderFunction={RenderItemMapItem} />
     </div>
   );
 };
