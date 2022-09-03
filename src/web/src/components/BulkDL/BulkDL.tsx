@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import * as searchlib from '../../lib/searches';
 import * as transfers from '../../lib/transfers';
 import {
-  Button, Dimmer, Dropdown, List, Loader, Segment,
+  Button, Dimmer, Dropdown, Icon, List, Loader, Progress, Segment,
 } from 'semantic-ui-react';
 import { createSearchHubConnection } from '../../lib/hubFactory';
 import Dropzone from './Dropzone';
@@ -63,7 +63,8 @@ const BulkDL = ({server}) => {
   const [allItemsInMap, setAllItemsInMap] = useState(false);
   const [batchIndex, setBatchIndex] = useState(0);
   const [batchedItems, setBatchedItems] = useState([]);
-
+  const [extension, setExtension] = useState('.mp3');
+  const [waiting, setWaiting] = useState(false);
   const batchSize = 5;
   const timeBetweenBatches = 20000;
  
@@ -92,7 +93,6 @@ const BulkDL = ({server}) => {
   };
 
   const getResults = async (searchitem : SearchItem) => {
-
     if(searchitem.title == null){
       return;
     }
@@ -101,39 +101,63 @@ const BulkDL = ({server}) => {
     const cleanTrackName = searchitem.title.toLowerCase().replace('-', '').replace('  ',' ').replace('/','').trim();
 
     const numMatches = 20;
-    var blacklist = ['bootleg', 'remix', 'rmx','mix', 'edit', 'clean'];
+    var blacklist = ['bootleg', 'remix', 'rmx','mix', 'edit', 'clean','flip', '.jpg', '.pdf'];
     blacklist = blacklist.filter(x => !searchitem.title.toLowerCase().includes(x));
     const responses = await searchlib.getResponses({ id: searchitem.id });  //responses is a list of UserShare
     let matches : FileResult[] = [];
     let allResults : FileResult[] = [];
+
+    let possibleFiles : FileResult[] = [];
     responses?.forEach((share : UserShare) => {
       if (share.fileCount > 0 && matches.length < numMatches) {
-        share.files.every((file : FileResult) => {
-          const lowercaseName = file.filename.toLowerCase();
-          if (
-            cleanArtistName.split(' ').every(w => lowercaseName.includes(w)) &&     //match every word seperately 
-            cleanTrackName.split(' ').every(w => lowercaseName.includes(w)) &&
-            !blacklist.some(element => lowercaseName.includes(element)) &&
-            !file.isLocked
-          ){
-        
+        share.files.every((file : FileResult) => { 
+          if(!file.isLocked){
             file.username = share.username;
             file.uploadSpeed = share.uploadSpeed;
-            
-            if(matches.length < numMatches){
-              matches.push(file);
-            }
-
-          } else {
-            allResults.push(file);
+            possibleFiles.push(file);
           }
-
-          return true;
         });
       }
     });
-    console.log('results fetch complete');
-    matches = matches?.sort((a, b) => b.bitRate - a.bitRate);
+    //possibleFiles = possibleFiles?.sort((a, b) => b.bitRate - a.bitRate);   // sort by bitrate
+    possibleFiles = possibleFiles?.sort((a, b) => b.uploadSpeed - a.uploadSpeed);   // sort by bitrate
+
+    //console.log(possibleFiles);
+    possibleFiles.every((file : FileResult) => {
+      const lowercaseName = file.filename.toLowerCase();
+
+      //basic checks. Dont keep anything that fails basic
+      if (                                            
+        !blacklist.some(element => lowercaseName.includes(element)) &&
+        lowercaseName.includes(extension)
+      ){
+        
+        //more intense checks
+        if(
+          cleanArtistName.split(' ').every(w => lowercaseName.includes(w)) &&     //match every word seperately 
+          cleanTrackName.split(' ').every(w => lowercaseName.includes(w)) &&
+          (file.bitRate == null || file.bitRate >= 320)
+        ){
+          //if(matches.length < numMatches){
+          matches.push(file);
+          //}
+        
+        // hold on to these items just in case
+        } else {
+          allResults.push(file);
+        }
+      } 
+      return true;
+    });
+
+    //This happens when no files matching basic checks (usually extension) are found
+    if(matches.length == 0){
+      console.log("no matches", allResults.length, "semi matches")
+      allResults = possibleFiles;
+    }else{
+      console.log('finished getting results for', searchitem.title,".", allResults.length, "semi-matches found. best match", matches[0].username+" "+matches[0].filename || "N/A");
+    }
+  
 
     const item: SearchItem = {
       id: searchitem.id,
@@ -209,6 +233,10 @@ const BulkDL = ({server}) => {
     return num;
   };
 
+  const numberOfItems = () => {
+    return Object.keys(itemMap).length;
+  }
+
   const onSearchUpdate = (search : SearchUpdate) => {
     //console.log(search);
 
@@ -260,8 +288,10 @@ const BulkDL = ({server}) => {
 
   const waitAndStart = async (index ) => {
     console.log('waiting 10 secs to start batch ' + index);
+    setWaiting(true)
     await new Promise(r => setTimeout(r, timeBetweenBatches));
     startNextBatch(batchedItems.batched[index]);
+    setWaiting(false)
   };
 
   useEffect(() => {
@@ -271,9 +301,9 @@ const BulkDL = ({server}) => {
       var currentBatchsize = 1;
 
       //The last batch may not be equal length to the batchSize
-      var currentBatch = (batchedItems.batched[batchIndex] as SearchItem[])
+      var currentBatch = (batchedItems.batched[batchIndex] as SearchItem[]);
       currentBatchsize = currentBatch.length;   
-      var completeThisBatch = Object.keys(currentBatch).map(x => itemMap[currentBatch[x].id]).filter(x => x.isCompleted).length
+      var completeThisBatch = Object.keys(currentBatch).map(x => itemMap[currentBatch[x].id]).filter(x => x.isCompleted).length;
 
       if(completeThisBatch >= currentBatchsize ){
         if(batchIndex > batchedItems.length - 1) {
@@ -287,7 +317,7 @@ const BulkDL = ({server}) => {
       }
     }
 
-  },[completedItems])
+  },[completedItems]);
 
   const downloadAll = () => {
     for (const key in itemMap) {
@@ -423,7 +453,14 @@ const BulkDL = ({server}) => {
       setItemMap(prevState => ({...prevState,  [item.id]: newItem}));
     };
 
-    const resultOptions = item.allResults.map((result : FileResult) => ({value: result, key: uuidv4(), text: result.filename}));
+    const onClickDelete = () => {
+      setItemMap(prevState => ({...prevState,  [item.id]: null}));
+    };
+
+    const resultOptions = () => {
+      let allitems = item.allResults.concat(item.results);
+      return allitems.map((result : FileResult) => ({value: result, key: uuidv4(), text: result.filename}));
+    }
     var selected = null;
     
     var textColour  = item?.filesFound >0 ? 'black' : 'rgba(0, 0, 0, 0.3)';
@@ -436,7 +473,8 @@ const BulkDL = ({server}) => {
             <p style={{fontSize: '20px'}}>{item?.artist} - {item?.title} </p>
           </div>
           <div style={{ display: 'flex', alignItems : 'center' }}>
-            <div style={{paddingTop:10}}> files: {item?.filesFound}
+            <div style={{paddingTop:10}}> 
+              files: {item?.filesFound}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems : 'center', marginLeft:10 }}>
@@ -448,6 +486,11 @@ const BulkDL = ({server}) => {
               </Segment>
             )}
             {item.queued &&(<>queued</>)}
+            <Button
+              icon
+              style={{paddingRight : '10px'}}
+              onClick={() => null}
+            > <Icon name="close" /></Button>
           </div>
         </div>
         <div>
@@ -459,14 +502,14 @@ const BulkDL = ({server}) => {
 
           {item?.isCompleted && (
             <>
-              {!item?.bestMatch && item?.allResults?.length >0 && item.filesFound > 0 ? (
+              {!item?.bestMatch && resultOptions().length > 0 && item.filesFound > 0 ? (
                 <>
                   <Dropdown
                     fluid
                     selection
-                    defaultValue={resultOptions[0].value}
-                    options={resultOptions}
-                    onChange={(e, data) => {selected = (data.value as FileResult);}} 
+                    defaultValue={resultOptions()[0].value}
+                    options={resultOptions()}
+                    onChange={(e, data) => {selected = (data.value as unknown as FileResult);}} 
                   />
                   <Button onClick={ () => onClickConfirm()}>ok</Button>
                 </>
@@ -484,23 +527,48 @@ const BulkDL = ({server}) => {
       </List.Item>
     );
   };
-
+  const extensions = [
+    { key: 1, text: '.mp3', value: '.mp3' },
+    { key: 2, text: '.flac', value: '.flac' },
+    { key: 3, text: '.wav', value: '.wav' },
+  ];
+  
+  const percentComplete = Math.round((numberOfItemsComplete()/numberOfItems()) * 100);
 
   return(
     <div>Bulk dl
      
       <p>Head to <Link to="https://exportify.net/">exportify.net/</Link> to export your playlist from Spotify</p>
+      Prefered extension: {" "}
+      <Dropdown 
+        selection
+        onChange={(e, {value}) => setExtension(value)} 
+        value={extension}
+        options={extensions}
+      />
       <br/>
       <br/>
-      Number of items: {numItems}
-
+      Number of items: {numberOfItems()}
+      <div style={{alignItems: 'center', width : '80%'}}>
+        
+        <Progress percent={percentComplete}
+          indicating
+          progress
+          autoSuccess
+          active={!waiting && numberOfItems() > 0}
+          warning={waiting}
+        >
+          {waiting && percentComplete < 100 && (<>waiting to avoid getting d/c'd by network</>)}
+        </Progress>
+      </div>
       <br/>
+      
       <br/>
-      {searchComplete && (
+      {percentComplete === 100 && (
         <Button onClick={() => downloadAll()}>Download All</Button>
       )}
 
-      {!searchComplete && numItems === 0 && (
+      {numberOfItemsComplete() < 1 && numberOfItems() === 0 && (
         <Dropzone onDrop={onDrop} accept={'text/csv'} />
       )}
 
