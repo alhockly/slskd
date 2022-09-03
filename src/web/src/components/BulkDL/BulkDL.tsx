@@ -415,7 +415,7 @@ const BulkDL = ({server}) => {
 
     
     const onClickConfirm = () =>{
-      if(selected == null){ selected = resultOptions[0].value; }
+      if(selected == null){ selected = resultOptions()[0].value; }
       console.log(selected);
 
       const newItem : SearchItem = {
@@ -460,7 +460,7 @@ const BulkDL = ({server}) => {
     const resultOptions = () => {
       let allitems = item.allResults.concat(item.results);
       return allitems.map((result : FileResult) => ({value: result, key: uuidv4(), text: result.filename}));
-    }
+    };
     var selected = null;
     
     var textColour  = item?.filesFound >0 ? 'black' : 'rgba(0, 0, 0, 0.3)';
