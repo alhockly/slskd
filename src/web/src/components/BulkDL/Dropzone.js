@@ -1,12 +1,12 @@
-import React from "react";
+import React from 'react';
 // Import the useDropzone hooks from react-dropzone
-import { useDropzone } from "react-dropzone";
+import { useDropzone } from 'react-dropzone';
 
 const Dropzone = ({ onDrop, accept }) => {
   // Initializing useDropzone hooks with options
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept
+    accept,
   });
 
   /* 

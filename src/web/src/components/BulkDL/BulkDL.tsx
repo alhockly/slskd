@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import * as searchlib from '../../lib/searches';
 import * as transfers from '../../lib/transfers';
 import {
-  Button, Dimmer, Dropdown, Icon, List, Loader, Progress, Segment,
+  Button, Dimmer, Dropdown, Icon, List, Loader, Modal, ModalActions, Progress, Segment,
 } from 'semantic-ui-react';
 import { createSearchHubConnection } from '../../lib/hubFactory';
 import Dropzone from './Dropzone';
@@ -65,6 +65,7 @@ const BulkDL = ({server}) => {
   const [batchedItems, setBatchedItems] = useState([]);
   const [extension, setExtension] = useState('.mp3');
   const [waiting, setWaiting] = useState(false);
+  const [downloadStartedModal, setDownloadStartedModal] = useState(false);
   const batchSize = 5;
   const timeBetweenBatches = 20000;
  
@@ -151,11 +152,13 @@ const BulkDL = ({server}) => {
     });
 
     //This happens when no files matching basic checks (usually extension) are found
-    if(matches.length == 0){
-      console.log("no matches", allResults.length, "semi matches")
+    if(matches.length === 0){
+      console.log('no matches', allResults.length, 'semi matches');
       allResults = possibleFiles;
     }else{
-      console.log('finished getting results for', searchitem.title,".", allResults.length, "semi-matches found. best match", matches[0].username+" "+matches[0].filename || "N/A");
+      console.log('finished getting results for', 
+        searchitem.title,'.', allResults.length, 'semi-matches found. best match',
+        matches[0].username+' '+matches[0].filename || 'N/A');
     }
   
 
@@ -235,7 +238,7 @@ const BulkDL = ({server}) => {
 
   const numberOfItems = () => {
     return Object.keys(itemMap).length;
-  }
+  };
 
   const onSearchUpdate = (search : SearchUpdate) => {
     //console.log(search);
@@ -273,7 +276,6 @@ const BulkDL = ({server}) => {
     
     const connect = async () => {
       try {
-        
         await searchHub.start();
       } catch (error) {
         toast.error(error?.message ?? 'Failed to connect');
@@ -288,10 +290,10 @@ const BulkDL = ({server}) => {
 
   const waitAndStart = async (index ) => {
     console.log('waiting 10 secs to start batch ' + index);
-    setWaiting(true)
+    setWaiting(true);
     await new Promise(r => setTimeout(r, timeBetweenBatches));
     startNextBatch(batchedItems.batched[index]);
-    setWaiting(false)
+    setWaiting(false);
   };
 
   useEffect(() => {
@@ -328,6 +330,7 @@ const BulkDL = ({server}) => {
         }
       }
     }
+    setDownloadStartedModal(true);
   };
 
   const startDownload = async (match : FileResult) => {
@@ -373,6 +376,7 @@ const BulkDL = ({server}) => {
         var trackName = song.TrackName.replace(/ *\([^)]*\) */g, ''); //Remove text inside brackets
 
         if(artist.includes(',')) {
+          // eslint-disable-next-line prefer-destructuring
           artist = song.ArtistNames.split(',')[0];
         }
         addSearchItem(trackName, artist);
@@ -466,7 +470,7 @@ const BulkDL = ({server}) => {
     var textColour  = item?.filesFound >0 ? 'black' : 'rgba(0, 0, 0, 0.3)';
     return (
       <List.Item key={item?.id} style={{padding: '10px',
-        margin:'10px', backgroundColor: 'grey', borderRadius: '5px', color: textColour}}>
+        margin:'10px 0px', backgroundColor: 'grey', borderRadius: '5px', color: textColour}}>
         <div style={{ display: 'flex', direction: 'row' }}>
 
           <div style={{ width: '70%' }}>
@@ -477,7 +481,7 @@ const BulkDL = ({server}) => {
               files: {item?.filesFound}
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems : 'center', marginLeft:10 }}>
+          <div style={{ display: 'flex', alignItems : 'center', flexGrow: 1, flexDirection: 'row-reverse'}}>
             {!item?.isCompleted && !item.queued && (
               <Segment style={{ backgroundColor:'rgba(255,255,255,0'}}>
                 <Dimmer active >
@@ -501,7 +505,7 @@ const BulkDL = ({server}) => {
           )}
 
           {item?.isCompleted && (
-            <>
+            <div style={{marginLeft: 2, display: 'inline'}}>
               {!item?.bestMatch && resultOptions().length > 0 && item.filesFound > 0 ? (
                 <>
                   <Dropdown
@@ -520,7 +524,7 @@ const BulkDL = ({server}) => {
                   )}
                 </>
               ) }
-            </>   
+            </div>   
           )}
           
         </div>
@@ -536,45 +540,60 @@ const BulkDL = ({server}) => {
   const percentComplete = Math.round((numberOfItemsComplete()/numberOfItems()) * 100);
 
   return(
-    <div>Bulk dl
+    <>
+      <div>Bulk dl
      
-      <p>Head to <Link to="https://exportify.net/">exportify.net/</Link> to export your playlist from Spotify</p>
-      Prefered extension: {" "}
-      <Dropdown 
-        selection
-        onChange={(e, {value}) => setExtension(value)} 
-        value={extension}
-        options={extensions}
-      />
-      <br/>
-      <br/>
-      Number of items: {numberOfItems()}
-      <div style={{alignItems: 'center', width : '80%'}}>
-        
-        <Progress percent={percentComplete}
-          indicating
-          progress
-          autoSuccess
-          active={!waiting && numberOfItems() > 0}
-          warning={waiting}
-        >
-          {waiting && percentComplete < 100 && (<>waiting to avoid getting d/c'd by network</>)}
-        </Progress>
-      </div>
-      <br/>
+        <p>Head to <Link to={{ pathname: 'https://exportify.net/'}} target={'_blank'}>exportify.net/</Link> to export your playlist from Spotify</p>
+      Prefered extension: {' '}
+        <Dropdown 
+          selection
+          onChange={(e, {value}) => setExtension(value)} 
+          value={extension}
+          options={extensions}
+        />
+        <br/>
+        <br/>
       
-      <br/>
-      {percentComplete === 100 && (
-        <Button onClick={() => downloadAll()}>Download All</Button>
-      )}
+        {numberOfItems() > 0 &&(
+          <>Number of items: {numberOfItems()}
+            <div style={{alignItems: 'center', margin: '12px 0px'}}>
+              <Progress percent={percentComplete}
+                indicating
+                progress
+                autoSuccess
+                active={!waiting && numberOfItems() > 0}
+                warning={waiting}
+              >
+                {waiting && percentComplete < 100 && (<>waiting to avoid getting d/c'd by network</>)}
+              </Progress>
+            </div>
+          </>
+        )}
+        <br/>
+      
+      
+        {percentComplete === 100 && (
+          <Button onClick={() => downloadAll()}>Download All</Button>
+        )}
 
-      {numberOfItemsComplete() < 1 && numberOfItems() === 0 && (
-        <Dropzone onDrop={onDrop} accept={'text/csv'} />
-      )}
+        {numberOfItemsComplete() < 1 && numberOfItems() === 0 && (
+          <Dropzone onDrop={onDrop} accept={'text/csv'} />
+        )}
 
-      <BulkSearchList
-        list={itemMap} renderFunction={RenderItemMapItem} />
-    </div>
+        <BulkSearchList
+          list={itemMap} renderFunction={RenderItemMapItem} />
+      </div>
+
+      <Modal
+        open={downloadStartedModal}
+        onClose={() => setDownloadStartedModal(false)}
+      >
+        <Modal.Content>
+          <p>Downloads started</p>
+          <p>Go to <Link to="/downloads">Downloads</Link></p>
+        </Modal.Content>
+      </Modal>
+    </>
   );
 };
 
